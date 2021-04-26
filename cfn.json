@@ -102,12 +102,10 @@
 
     "DBPassword" : {
       "NoEcho": "true",
-      "Description" : "The WordPress database admin account password",
+      "Description" : "DBPassword must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character.",
       "Type": "String",
       "MinLength": "8",
-      "MaxLength": "41",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
-      "ConstraintDescription" : "must contain only alphanumeric characters."
+      "MaxLength": "41"
     },
 
     "DBRootPassword" : {
