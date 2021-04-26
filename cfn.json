@@ -1,0 +1,369 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Ruten inc. Establish WordPress environment using formal data.",
+
+  "Parameters" : {
+
+    "KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+    },
+
+    "InstanceType" : {
+      "Description" : "WebServer EC2 instance type",
+      "Type" : "String",
+      "Default" : "t2.micro",
+      "AllowedValues" : [ "t1.micro", "t2.nano", "t2.micro", "t2.small", "t2.medium", "t2.large"]
+,
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+
+    "SSHLocation": {
+      "Description": "IP address to connect ssh.",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+
+    "BucketName": {
+      "Description": "S3 Bucket name which stores data to use. 例)wp-backup-4-26",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "30",
+      "Default": "wp-backup-4-26"
+    },
+
+    "WPBackupFile": {
+      "Description": "Backup file of WordPress stored in S3 Bucket ex)wordpress.tar.gz",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "30",
+      "Default": "wordpress.tar.gz"
+    },
+
+    "S3AccessKey": {
+      "NoEcho": "true",
+      "Description": "Access key to access S3 Bucket.",
+      "Type": "String",
+      "MinLength": "0",
+      "MaxLength": "100",
+      "Default": ""
+    },
+
+    "S3SecretAccessKey": {
+      "NoEcho": "true",
+      "Description": "Secret access key to access S3 Bucket",
+      "Type": "String",
+      "MinLength": "0",
+      "MaxLength": "100",
+      "Default": ""
+    },
+
+    "HTTPDConfFile": {
+      "Description": "The file name of httpd.conf to use, stored in S3 Bucket.",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "100",
+      "Default": "httpd.conf"
+    },
+
+    "DBBackupFile": {
+      "Description": "DB backup file stored in S3. ex)backup-4-26.sql",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "100",
+      "Default": "backup-4-26.sql"
+    },
+
+    "DBName" : {
+      "Default": "wordpressdb",
+      "Description" : "The WordPress database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBUser" : {
+      "NoEcho": "true",
+      "Description" : "The WordPress database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBPassword" : {
+      "NoEcho": "true",
+      "Description" : "The WordPress database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "DBRootPassword" : {
+      "NoEcho": "true",
+      "Description" : "MySQL root password. DBRootPassword must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character.",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41"
+    }
+  },
+
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "t1.micro"    : { "Arch" : "HVM64"  },
+      "t2.nano"     : { "Arch" : "HVM64"  },
+      "t2.micro"    : { "Arch" : "HVM64"  },
+      "t2.small"    : { "Arch" : "HVM64"  },
+      "t2.medium"   : { "Arch" : "HVM64"  },
+      "t2.large"    : { "Arch" : "HVM64"  }
+    },
+
+    "AWSInstanceType2NATArch" : {
+      "t1.micro"    : { "Arch" : "NATHVM64"  },
+      "t2.nano"     : { "Arch" : "NATHVM64"  },
+      "t2.micro"    : { "Arch" : "NATHVM64"  },
+      "t2.small"    : { "Arch" : "NATHVM64"  },
+      "t2.medium"   : { "Arch" : "NATHVM64"  },
+      "t2.large"    : { "Arch" : "NATHVM64"  }
+    }
+,
+    "AWSRegionArch2AMI" : {
+      "ap-northeast-1"   : {"HVM64" : "ami-06098fd00463352b6", "HVMG2" : "ami-09d0e0e099ecabba2"}
+    }
+
+  },
+
+  "Resources" : {
+    "WebServerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+        ]
+      }
+    },
+
+    "WebServer": {
+      "Type" : "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Authentication": {
+          "S3AccessCreds" : {
+             "type" : "S3",
+             "accessKeyId" : { "Ref" : "S3AccessKey" },
+             "secretKey" : { "Ref": "S3SecretAccessKey" },
+             "buckets": [ { "Ref" : "BucketName" } ]
+          }
+        },
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "wordpress_install" : ["install_cfn", "install_packages", "install_wordpress", "configure_wordpress" ]
+          },
+          "install_cfn" : {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[main]\n",
+                  "stack=", { "Ref": "AWS::StackId" }, "\n",
+                  "region=", { "Ref": "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.WebServer.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                          "         --stack ", { "Ref" : "AWS::StackName" },
+                          "         --resource WebServer ",
+                          "         --configsets wordpress_install ",
+                          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"] }
+              }
+            }
+          },
+
+          "install_packages" : {
+            "commands" : {
+              "01_add_repo" : {
+                "command" : "yum localinstall https://dev.mysql.com/get/mysql80-community-release-el7-1.noarch.rpm -y"
+              },
+              "02_disable_mysql80" : {
+                "command" : "yum-config-manager --disable mysql80-community"
+              },
+              "03_enable_mysql57" : {
+                "command" : "yum-config-manager --enable mysql57-community"
+              },
+              "04_check_if_mysql57_installable" : {
+                "command" : "yum info mysql-community-server"
+              },
+              "05_install_mysql57" : {
+                "command" : "yum install mysql-community-server -y"
+              },
+              "06_echo_mysql_version" : {
+                "command" : "mysqld --version"
+              },
+              "07_enable_php74" : {
+                "command" : "amazon-linux-extras enable php7.4"
+              },
+              "08_yum_clean" : {
+                "command" : "yum clean metadata"
+              },
+              "09_install_php" : {
+                "command" : "yum install php php-{pear,cgi,common,curl,mbstring,gd,mysqlnd,gettext,bcmath,json,xml,fpm,intl,zip,imap} -y"
+              }
+            }
+          },
+
+          "install_wordpress" : {
+            "sources" : {
+              "/var/www/html" : {
+                "Fn::Join" : [
+                  "", ["https://", { "Ref" : "BucketName" }, ".s3-ap-northeast-1.amazonaws.com/", { "Ref": "WPBackupFile"}]
+                ]
+              }
+            },
+            "files" : {
+              "/tmp/setup.mysql" : {
+                "source" : {
+                  "Fn::Join" : [
+                    "", ["https://", { "Ref" : "BucketName" }, ".s3-ap-northeast-1.amazonaws.com/", { "Ref": "DBBackupFile"}]
+                  ]
+                },
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root",
+                "authentication" : "S3AccessCreds"
+              },
+              "/etc/httpd/conf/httpd.conf" : {
+                "source" : {
+                  "Fn::Join" : [
+                    "", ["https://", { "Ref" : "BucketName" }, ".s3-ap-northeast-1.amazonaws.com/", { "Ref": "HTTPDConfFile"}]
+                  ]
+                },
+                "mode"  : "000644",
+                "owner" : "root",
+                "group" : "root",
+                "authentication" : "S3AccessCreds"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
+                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            }
+          },
+
+          "configure_wordpress" : {
+            "files": {
+              "/tmp/user.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[client]\n",
+                  "user=", "root", "\n"
+                ]]},
+                "mode"  : "000600",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/tmp/setup0.mysql" : {
+                "content": { "Fn::Join": [ "", [
+                  "CREATE DATABASE ", { "Ref" : "DBName" }, ";\n",
+                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBPassword" }, "';\n",
+                  "GRANT ALL ON ", { "Ref" : "DBName" }, ".* TO '", { "Ref" : "DBUser" }, "'@'localhost';\n",
+                  "FLUSH PRIVILEGES;\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "commands" : {
+              "01_add_root_password_setting" : {
+                "command" : { "Fn::Join" : ["", ["cat /var/log/mysqld.log | grep 'A temporary password is' | sed 's/.*root@localhost: //' | xargs -I{} echo 'password=\"{}\"' >> /tmp/user.conf" ]]}
+              },
+              "02_set_mysql_root_password" : {
+                "command" : { "Fn::Join" : ["", ["mysqladmin --defaults-extra-file=/tmp/user.conf password '", { "Ref" : "DBRootPassword" }, "'"]]}
+              },
+              "03_remove_root_password_setting" : {
+                "command" : { "Fn::Join" : ["", ["sed -i '$d' /tmp/user.conf"]]}
+              },
+              "04_reset_root_password" : {
+                "command" : { "Fn::Join" : ["", ["echo 'password=\"", { "Ref" : "DBRootPassword" }, "\"' ", ">> /tmp/user.conf"]]}
+              },
+              "05_create_database" : {
+                "command" : "mysql --defaults-extra-file=/tmp/user.conf < /tmp/setup0.mysql",
+                "cwd" : "/",
+                "ignoreErrors" : "true"
+              },
+              "06_create_tables_and_insert_data" : {
+                "command" : { "Fn::Join" : ["", ["mysql --defaults-extra-file=/tmp/user.conf --database=", { "Ref" : "DBName"} , " < /tmp/setup.mysql"]]},
+                "cwd" : "/",
+                "ignoreErrors" : "true"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+                          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "InstanceType"   : { "Ref" : "InstanceType" },
+        "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                       "#!/bin/bash -xe\n",
+                       "yum update -y aws-cfn-bootstrap\n",
+
+                       "/opt/aws/bin/cfn-init -v ",
+                       "         --stack ", { "Ref" : "AWS::StackName" },
+                       "         --resource WebServer ",
+                       "         --configsets wordpress_install ",
+                       "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                       "/opt/aws/bin/cfn-signal -e $? ",
+                       "         --stack ", { "Ref" : "AWS::StackName" },
+                       "         --resource WebServer ",
+                       "         --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M"
+        }
+      }
+    }
+  },
+
+  "Outputs" : {
+    "WebsiteURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]}, "/wordpress" ]]},
+      "Description" : "WordPress Website"
+    }
+  }
+}
