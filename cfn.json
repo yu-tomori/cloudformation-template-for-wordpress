@@ -105,7 +105,10 @@
       "Description" : "DBPassword must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character.",
       "Type": "String",
       "MinLength": "8",
-      "MaxLength": "41"
+      "MaxLength": "41",
+      "AllowedPattern" : "^(?=.*[A-Z])(?=.*[!@#$&*])(?=.*[0-9])(?=.*[a-z]).*$",
+      "ConstraintDescription" : "must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character."
+
     },
 
     "DBRootPassword" : {
@@ -113,7 +116,9 @@
       "Description" : "MySQL root password. DBRootPassword must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character.",
       "Type": "String",
       "MinLength": "8",
-      "MaxLength": "41"
+      "MaxLength": "41",
+      "AllowedPattern" : "^(?=.*[A-Z])(?=.*[!@#$&*])(?=.*[0-9])(?=.*[a-z]).*$",
+      "ConstraintDescription" : "must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character."
     }
   },
 
@@ -314,12 +319,28 @@
               "04_reset_root_password" : {
                 "command" : { "Fn::Join" : ["", ["echo 'password=\"", { "Ref" : "DBRootPassword" }, "\"' ", ">> /tmp/user.conf"]]}
               },
-              "05_create_database" : {
+              "05_resetting_wp_config_dbuser" : {
+                "command" : { "Fn::Join" : ["",
+                  ["sed -i \"s/( 'DB_USER', '.*' );/",
+                    "( 'DB_USER', '", { "Ref" : "DBUser" }, "' );", "/\" ",
+                    "wp-config.php"]
+                ]},
+                "cwd" : "/var/www/html/wordpress/"
+              },
+              "06_resetting_wp_config_dbpassword" : {
+                "command" : { "Fn::Join" : ["",
+                  ["sed -i \"s/( 'DB_PASSWORD', '.*' );/",
+                    "( 'DB_PASSWORD', '",{ "Ref" : "DBPassword" }, "' );", "/\" ",
+                    "wp-config.php"]
+                ]},
+                "cwd" : "/var/www/html/wordpress/"
+              },
+              "07_create_database" : {
                 "command" : "mysql --defaults-extra-file=/tmp/user.conf < /tmp/setup0.mysql",
                 "cwd" : "/",
                 "ignoreErrors" : "true"
               },
-              "06_create_tables_and_insert_data" : {
+              "08_create_tables_and_insert_data" : {
                 "command" : { "Fn::Join" : ["", ["mysql --defaults-extra-file=/tmp/user.conf --database=", { "Ref" : "DBName"} , " < /tmp/setup.mysql"]]},
                 "cwd" : "/",
                 "ignoreErrors" : "true"
